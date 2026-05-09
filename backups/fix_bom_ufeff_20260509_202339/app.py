@@ -1,4 +1,5 @@
-import os
+from v2_catalog_data import PRODUCT_CATALOG, PRODUCT_CATEGORIES, RECIPE_CATALOG, default_products_for_seed
+﻿import os
 import io
 import base64
 from datetime import date, datetime, timedelta
@@ -8,84 +9,6 @@ import streamlit as st
 from sqlalchemy import create_engine, text
 
 
-try:
-    from v2_catalog_data import PRODUCT_CATALOG, PRODUCT_CATEGORIES, RECIPE_CATALOG, default_products_for_seed
-except Exception:
-    PRODUCT_CATALOG = [
-        {
-            "name": "апельсин",
-            "emoji": "🍊",
-            "category": "Фрукты",
-            "unit": "шт",
-            "calories_per_100g": 47,
-            "protein": 0.9,
-            "fat": 0.1,
-            "carbs": 11.8,
-            "storage_days": 14,
-            "description": "Цитрус для перекуса и сока.",
-        },
-        {
-            "name": "куриная грудка",
-            "emoji": "🍗",
-            "category": "Мясо и птица",
-            "unit": "г",
-            "calories_per_100g": 165,
-            "protein": 31,
-            "fat": 3.6,
-            "carbs": 0,
-            "storage_days": 3,
-            "description": "Нежирный белок.",
-        },
-        {
-            "name": "рис",
-            "emoji": "🍚",
-            "category": "Крупы и паста",
-            "unit": "г",
-            "calories_per_100g": 344,
-            "protein": 6.7,
-            "fat": 0.7,
-            "carbs": 78,
-            "storage_days": 365,
-            "description": "Базовый гарнир.",
-        },
-    ]
-    PRODUCT_CATEGORIES = sorted({x["category"] for x in PRODUCT_CATALOG})
-    RECIPE_CATALOG = [
-        {
-            "name": "Омлет",
-            "emoji": "🍳",
-            "category": "Завтрак",
-            "time": "12 минут",
-            "calories": 320,
-            "description": "Нежный омлет на молоке.",
-            "ingredients": "яйца, молоко, соль",
-        },
-        {
-            "name": "Курица с рисом",
-            "emoji": "🍗",
-            "category": "Обед",
-            "time": "35 минут",
-            "calories": 560,
-            "description": "Сытное домашнее блюдо.",
-            "ingredients": "курица, рис, морковь, лук",
-        },
-    ]
-
-    def default_products_for_seed(limit=20):
-        result = []
-        for item in PRODUCT_CATALOG[:limit]:
-            result.append((
-                item["name"],
-                1,
-                item["unit"],
-                item["calories_per_100g"],
-                item["category"],
-                date.today() + timedelta(days=item["storage_days"]),
-                item["emoji"],
-            ))
-        return result
-
-
 APP_NAME = "Умный холодильник Мединки"
 APP_VERSION = "v2.0"
 DEVELOPER = "Иванов Михаил"
@@ -93,19 +16,30 @@ DEVELOPER = "Иванов Михаил"
 USERS = {
     "Мишка": {
         "emoji": "🐻",
+        "pin_secret": "AUTH_PIN_MISHKA",
+        "default_pin": "1111",
         "goal": 2300,
+        "accent": "#1d4ed8",
         "description": "Домашняя еда, белок, сытное меню.",
     },
     "Мединка": {
         "emoji": "🌸",
+        "pin_secret": "AUTH_PIN_MEDINKA",
+        "default_pin": "2222",
         "goal": 1800,
+        "accent": "#be185d",
         "description": "Лёгкие блюда, овощи, комфортное питание.",
     },
 }
 
-DEFAULT_PRODUCTS = default_products_for_seed(limit=12)
+DEFAULT_PRODUCTS = default_products_for_seed(limit=20)
+
 DEFAULT_RECIPES = RECIPE_CATALOG
 
+
+# =========================
+# Basic config
+# =========================
 
 st.set_page_config(
     page_title=APP_NAME,
@@ -115,9 +49,17 @@ st.set_page_config(
 )
 
 
-# =========================
-# Database
-# =========================
+
+
+# AUTO_AUTH_DISABLED_V2_START
+# Авторизация временно отключена на период разработки v2.
+try:
+    st.session_state["authenticated"] = True
+    if "user" not in st.session_state:
+        st.session_state["user"] = "Мишка"
+except Exception:
+    pass
+# AUTO_AUTH_DISABLED_V2_END
 
 def get_secret(name: str, default=None):
     try:
@@ -144,7 +86,10 @@ def get_engine():
 
 
 def is_postgres():
-    return get_engine().dialect.name.startswith("postgres")
+    try:
+        return get_engine().dialect.name.startswith("postgres")
+    except Exception:
+        return False
 
 
 def ensure_schema():
@@ -204,6 +149,7 @@ def ensure_schema():
                     conn.execute(text(sql))
                 except Exception:
                     pass
+
         else:
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS products (
@@ -248,66 +194,62 @@ def ensure_schema():
                 )
             """))
 
-            for table_name, columns in {
-                "products": [
-                    ("emoji", "TEXT DEFAULT '🧺'"),
-                    ("image_data", "TEXT"),
-                ],
-                "shopping_items": [
-                    ("status", "TEXT DEFAULT 'need'"),
-                ],
-            }.items():
-                try:
-                    cols = conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
-                    col_names = {row[1] for row in cols}
+            cols = conn.execute(text("PRAGMA table_info(products)")).fetchall()
+            col_names = {row[1] for row in cols}
+            if "emoji" not in col_names:
+                conn.execute(text("ALTER TABLE products ADD COLUMN emoji TEXT DEFAULT '🧺'"))
+            if "image_data" not in col_names:
+                conn.execute(text("ALTER TABLE products ADD COLUMN image_data TEXT"))
 
-                    for col_name, col_type in columns:
-                        if col_name not in col_names:
-                            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"))
-                except Exception:
-                    pass
+            cols = conn.execute(text("PRAGMA table_info(shopping_items)")).fetchall()
+            col_names = {row[1] for row in cols}
+            if "status" not in col_names:
+                conn.execute(text("ALTER TABLE shopping_items ADD COLUMN status TEXT DEFAULT 'need'"))
 
 
-def execute(sql, params=None):
-    ensure_schema()
-    with get_engine().begin() as conn:
-        conn.execute(text(sql), params or {})
+def seed_if_empty():
+    engine = get_engine()
+
+    with engine.begin() as conn:
+        count = conn.execute(text("SELECT COUNT(*) FROM products")).scalar() or 0
+
+        if count == 0:
+            for name, quantity, unit, calories, category, exp, emoji in DEFAULT_PRODUCTS:
+                conn.execute(
+                    text("""
+                        INSERT INTO products
+                            (name, quantity, unit, calories_per_100g, category, expiration_date, emoji, created_at)
+                        VALUES
+                            (:name, :quantity, :unit, :calories, :category, :expiration_date, :emoji, CURRENT_TIMESTAMP)
+                    """),
+                    {
+                        "name": name,
+                        "quantity": quantity,
+                        "unit": unit,
+                        "calories": calories,
+                        "category": category,
+                        "expiration_date": str(exp),
+                        "emoji": emoji,
+                    },
+                )
 
 
 def query_rows(sql, params=None):
     ensure_schema()
-    with get_engine().begin() as conn:
+    engine = get_engine()
+
+    with engine.begin() as conn:
         rows = conn.execute(text(sql), params or {}).mappings().all()
+
     return [dict(row) for row in rows]
 
 
-def seed_if_empty():
+def execute(sql, params=None):
     ensure_schema()
+    engine = get_engine()
 
-    with get_engine().begin() as conn:
-        count = conn.execute(text("SELECT COUNT(*) FROM products")).scalar() or 0
-
-        if count > 0:
-            return
-
-        for name, quantity, unit, calories, category, exp, emoji in DEFAULT_PRODUCTS:
-            conn.execute(
-                text("""
-                    INSERT INTO products
-                        (name, quantity, unit, calories_per_100g, category, expiration_date, emoji, created_at)
-                    VALUES
-                        (:name, :quantity, :unit, :calories, :category, :expiration_date, :emoji, CURRENT_TIMESTAMP)
-                """),
-                {
-                    "name": name,
-                    "quantity": quantity,
-                    "unit": unit,
-                    "calories": calories,
-                    "category": category,
-                    "expiration_date": str(exp),
-                    "emoji": emoji,
-                },
-            )
+    with engine.begin() as conn:
+        conn.execute(text(sql), params or {})
 
 
 def get_products():
@@ -371,7 +313,7 @@ def add_shopping_item(name, quantity, unit, category):
 def set_shopping_status(item_id, status):
     execute(
         "UPDATE shopping_items SET status = :status WHERE id = :id",
-        {"id": item_id, "status": status},
+        {"status": status, "id": item_id},
     )
 
 
@@ -419,7 +361,7 @@ def image_to_data_url(file):
 
 
 # =========================
-# Navigation and UI
+# UI
 # =========================
 
 def apply_design():
@@ -427,10 +369,12 @@ def apply_design():
         """
 <style>
 :root {
+    --bg: #f6f8f5;
     --ink: #10281c;
     --muted: #647067;
     --green: #1f6b43;
     --green-dark: #123321;
+    --mint: #eafaf0;
     --card: rgba(255,255,255,.94);
     --border: rgba(18,51,33,.10);
     --shadow: 0 18px 42px rgba(15,23,42,.09);
@@ -444,8 +388,8 @@ html, body, [data-testid="stAppViewContainer"] {
 
 .block-container {
     max-width: 1320px !important;
-    padding-top: 1rem !important;
-    padding-bottom: 7rem !important;
+    padding-top: 1.1rem !important;
+    padding-bottom: 6.7rem !important;
 }
 
 h1, h2, h3 {
@@ -453,6 +397,10 @@ h1, h2, h3 {
     line-height: 1.15 !important;
     letter-spacing: -0.035em !important;
     overflow: visible !important;
+}
+
+p, span, div {
+    word-break: normal !important;
 }
 
 a[href^="#"],
@@ -468,6 +416,38 @@ a[href^="#"],
     border-right: 1px solid rgba(18,51,33,.08) !important;
 }
 
+[data-testid="stSidebar"] [role="radiogroup"] {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 5px !important;
+}
+
+[data-testid="stSidebar"] input[type="radio"],
+[data-testid="stSidebar"] [role="radiogroup"] svg {
+    display: none !important;
+}
+
+[data-testid="stSidebar"] [role="radiogroup"] label {
+    min-height: 38px !important;
+    border-radius: 16px !important;
+    padding: 9px 12px !important;
+    margin: 0 !important;
+    border: 1px solid transparent !important;
+    font-weight: 750 !important;
+    transition: all .15s ease !important;
+}
+
+[data-testid="stSidebar"] [role="radiogroup"] label:hover {
+    background: rgba(34,197,94,.10) !important;
+    transform: translateX(2px);
+}
+
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input[type="radio"]:checked) {
+    background: linear-gradient(135deg, rgba(34,197,94,.22), rgba(240,253,244,.96)) !important;
+    border-color: rgba(34,197,94,.28) !important;
+    box-shadow: 0 8px 20px rgba(15,23,42,.06) !important;
+}
+
 div.stButton > button {
     border-radius: 18px !important;
     min-height: 48px !important;
@@ -476,7 +456,14 @@ div.stButton > button {
     box-shadow: 0 10px 24px rgba(15,23,42,.06) !important;
 }
 
+div.stButton > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px rgba(15,23,42,.11) !important;
+}
+
 .v2-hero {
+    position: relative;
+    overflow: hidden;
     border-radius: 34px;
     padding: 30px;
     background:
@@ -499,90 +486,72 @@ div.stButton > button {
     font-size: 1.08rem;
 }
 
-.v2-top-nav {
-    position: sticky;
-    top: 0;
-    z-index: 9999;
+.v2-grid-4 {
     display: grid;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-    gap: 8px;
-    padding: 10px;
-    margin: 0 0 18px 0;
-    border-radius: 24px;
-    background: rgba(255,255,255,.88);
-    border: 1px solid rgba(18,51,33,.10);
-    box-shadow: 0 14px 36px rgba(15,23,42,.08);
-    backdrop-filter: blur(16px);
-}
-
-.v2-top-nav a,
-.v2-sidebar-link,
-.v2-bottom-nav a,
-.v2-action-link {
-    text-decoration: none !important;
-}
-
-.v2-top-nav a {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 44px;
-    padding: 9px 10px;
-    border-radius: 17px;
-    color: #123321 !important;
-    font-weight: 900;
-    font-size: .92rem;
-    border: 1px solid transparent;
-}
-
-.v2-top-nav a:hover,
-.v2-top-nav a.active {
-    background: rgba(34,197,94,.16);
-    border-color: rgba(34,197,94,.24);
-}
-
-.v2-sidebar-link {
-    display: block;
-    padding: 10px 12px;
-    margin: 5px 0;
-    border-radius: 16px;
-    color: #123321 !important;
-    font-weight: 850;
-    border: 1px solid transparent;
-}
-
-.v2-sidebar-link:hover,
-.v2-sidebar-link.active {
-    background: rgba(34,197,94,.16);
-    border-color: rgba(34,197,94,.24);
-}
-
-.v2-action-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 16px;
-    margin: 10px 0 26px 0;
 }
 
-.v2-action-link {
-    display: flex;
+.v2-grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.v2-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.v2-card {
+    border-radius: 28px;
+    padding: 22px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    margin-bottom: 16px;
+}
+
+.v2-card-soft {
+    background: linear-gradient(135deg, #f0fff4 0%, #ffffff 100%);
+}
+
+.v2-card-warm {
+    background: linear-gradient(135deg, #fff7ed 0%, #fff 48%, #fdf2f8 100%);
+}
+
+.v2-metric {
+    font-size: 2.15rem;
+    font-weight: 950;
+    color: var(--ink);
+    letter-spacing: -.04em;
+}
+
+.v2-label {
+    color: var(--muted);
+    font-weight: 650;
+    margin-top: 4px;
+}
+
+.v2-chip {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    min-height: 54px;
-    border-radius: 20px;
-    color: #123321 !important;
-    font-weight: 900;
-    background: rgba(255,255,255,.94);
-    border: 1px solid rgba(18,51,33,.12);
-    box-shadow: 0 10px 24px rgba(15,23,42,.06);
+    gap: 6px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    margin: 4px 5px 0 0;
+    font-weight: 850;
+    font-size: .86rem;
 }
 
-.v2-bottom-nav {
-    display: none;
-}
+.v2-chip-green { background: #dcfce7; color: #166534; }
+.v2-chip-blue { background: #dbeafe; color: #1d4ed8; }
+.v2-chip-purple { background: #ede9fe; color: #6d28d9; }
+.v2-chip-orange { background: #ffedd5; color: #c2410c; }
+.v2-chip-red { background: #fee2e2; color: #b91c1c; }
 
-.v2-photo-native {
-    width: 100%;
+.v2-photo {
     min-height: 150px;
     border-radius: 22px;
     background:
@@ -593,6 +562,22 @@ div.stButton > button {
     justify-content: center;
     font-size: 3.2rem;
     margin-bottom: 14px;
+    overflow: hidden;
+}
+
+.v2-photo img {
+    width: 100%;
+    height: 170px;
+    object-fit: cover;
+    border-radius: 22px;
+}
+
+.v2-bottom-nav {
+    display: none;
+}
+
+.table-scroll {
+    overflow-x: auto;
 }
 
 @media (max-width: 900px) {
@@ -600,20 +585,11 @@ div.stButton > button {
         padding: .95rem 1rem 7rem 1rem !important;
     }
 
-    .v2-top-nav {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        position: relative;
-    }
-
-    .v2-top-nav a {
-        font-size: .8rem;
-        min-height: 42px;
-        white-space: nowrap;
-    }
-
-    .v2-action-grid {
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
+    .v2-grid-4,
+    .v2-grid-3,
+    .v2-grid-2 {
+        grid-template-columns: 1fr !important;
+        gap: 14px;
     }
 
     .v2-hero {
@@ -623,6 +599,11 @@ div.stButton > button {
 
     .v2-hero h1 {
         font-size: 2rem !important;
+    }
+
+    .v2-card {
+        border-radius: 24px;
+        padding: 18px;
     }
 
     .v2-bottom-nav {
@@ -635,16 +616,18 @@ div.stButton > button {
         z-index: 2147483647;
         padding: 8px;
         border-radius: 26px;
-        background: rgba(255,255,255,.96);
+        background: rgba(255,255,255,.95);
         border: 1px solid rgba(18,51,33,.12);
-        box-shadow: 0 18px 48px rgba(15,23,42,.22);
+        box-shadow: 0 18px 48px rgba(15,23,42,.20);
         backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
         gap: 6px;
     }
 
     .v2-bottom-nav a {
+        text-decoration: none !important;
         color: #123321 !important;
-        border-radius: 18px;
+        border-radius: 19px;
         padding: 8px 4px 7px 4px;
         min-height: 48px;
         display: flex;
@@ -658,17 +641,13 @@ div.stButton > button {
         line-height: 1.05;
     }
 
-    .v2-bottom-nav a.active {
-        background: rgba(34,197,94,.18);
-    }
-
     .v2-bottom-nav .emoji {
         font-size: 21px;
         line-height: 1;
     }
 }
 </style>
-""",
+        """,
         unsafe_allow_html=True,
     )
 
@@ -685,11 +664,8 @@ def get_query_tab():
     return tab
 
 
-def init_state():
-    st.session_state["authenticated"] = True
-
-    if "user" not in st.session_state:
-        st.session_state["user"] = "Мишка"
+def init_tab():
+    tab = get_query_tab()
 
     allowed = {
         "today",
@@ -702,8 +678,6 @@ def init_state():
         "settings",
     }
 
-    tab = get_query_tab()
-
     if tab in allowed:
         st.session_state["tab"] = tab
 
@@ -711,95 +685,66 @@ def init_state():
         st.session_state["tab"] = "today"
 
 
-def top_nav():
-    current = st.session_state.get("tab", "today")
-
-    items = [
-        ("today", "🏠 Сегодня"),
-        ("fridge", "🧊 Холодильник"),
-        ("scan", "📸 Сканер"),
-        ("recipes", "🍳 Рецепты"),
-        ("shopping", "🛒 Покупки"),
-        ("diary", "📔 Дневник"),
-        ("analytics", "📊 Аналитика"),
-        ("settings", "⚙️ Настройки"),
-    ]
-
-    links = []
-
-    for key, label in items:
-        active = "active" if current == key else ""
-        links.append(f'<a class="{active}" href="?tab={key}" target="_self">{label}</a>')
+def auth_screen():
+    apply_design()
 
     st.markdown(
-        f"""
-<div class="v2-top-nav">
-    {''.join(links)}
+        """
+<div class="v2-hero">
+    <h1>🥦 Умный холодильник Мединки</h1>
+    <p>Семейный вход в холодильник, меню, покупки, рецепты и дневник питания.</p>
 </div>
 """,
         unsafe_allow_html=True,
     )
 
+    st.markdown("## Кто входит?")
 
-def bottom_nav():
-    current = st.session_state.get("tab", "today")
+    if "login_user" not in st.session_state:
+        st.session_state["login_user"] = "Мишка"
 
-    items = [
-        ("today", "🏠", "Сегодня"),
-        ("fridge", "🧊", "Холод."),
-        ("scan", "📸", "Сканер"),
-        ("recipes", "🍳", "Рецепты"),
-        ("shopping", "🛒", "Покупки"),
-    ]
+    c1, c2 = st.columns(2)
 
-    links = []
-
-    for key, emoji, label in items:
-        active = "active" if current == key else ""
-        links.append(
-            f'<a class="{active}" href="?tab={key}" target="_self"><span class="emoji">{emoji}</span><span>{label}</span></a>'
-        )
-
-    st.markdown(
-        f"""
-<div class="v2-bottom-nav">
-    {''.join(links)}
+    for col, name in [(c1, "Мишка"), (c2, "Мединка")]:
+        with col:
+            info = USERS[name]
+            active = st.session_state["login_user"] == name
+            st.markdown(
+                f"""
+<div class="v2-card {'v2-card-soft' if active else ''}">
+    <h2>{info['emoji']} {name}</h2>
+    <p>{info['description']}</p>
+    <span class="v2-chip v2-chip-green">{info['goal']} ккал/день</span>
 </div>
 """,
-        unsafe_allow_html=True,
-    )
+                unsafe_allow_html=True,
+            )
+            if st.button(f"Выбрать {name}", key=f"login_choose_{name}", use_container_width=True):
+                st.session_state["login_user"] = name
+                st.rerun()
+
+    selected = st.session_state["login_user"]
+
+    with st.form("login_form_v2"):
+        pin = st.text_input("PIN-код", type="password", placeholder="Введите PIN")
+        submitted = st.form_submit_button("🔓 Войти", use_container_width=True)
+
+    if submitted:
+        user_info = USERS[selected]
+        expected = get_secret(user_info["pin_secret"], user_info["default_pin"])
+
+        if str(pin) == str(expected):
+            st.session_state["authenticated"] = True
+            st.session_state["user"] = selected
+            st.rerun()
+        else:
+            st.error("Неверный PIN-код.")
 
 
-def sidebar():
-    with st.sidebar:
-        st.markdown("## 🥦 Умный холодильник")
-        st.caption(f"{APP_VERSION} · {DEVELOPER}")
-        st.markdown("---")
-
-        current = st.session_state.get("tab", "today")
-
-        items = [
-            ("today", "🏠 Сегодня"),
-            ("fridge", "🧊 Холодильник"),
-            ("scan", "📸 Сканер"),
-            ("recipes", "🍳 Рецепты"),
-            ("shopping", "🛒 Покупки"),
-            ("diary", "📔 Дневник"),
-            ("analytics", "📊 Аналитика"),
-            ("settings", "⚙️ Настройки"),
-        ]
-
-        html = ""
-
-        for key, label in items:
-            active = "active" if current == key else ""
-            html += f'<a class="v2-sidebar-link {active}" href="?tab={key}" target="_self">{label}</a>'
-
-        st.markdown(html, unsafe_allow_html=True)
-
-        st.markdown("---")
-        user = st.session_state.get("user", "Мишка")
-        st.success(f"{USERS[user]['emoji']} {user}")
+def require_auth():
+    if not st.session_state.get("authenticated"):
+        auth_screen()
+        st.stop()
 
 
 def hero(title, subtitle, icon="🥦"):
@@ -814,45 +759,48 @@ def hero(title, subtitle, icon="🥦"):
     )
 
 
-def action_links():
+def metric_grid(products):
+    total_products = len(products)
+
+    attention = 0
+    today_value = date.today()
+
+    for p in products:
+        exp = p.get("expiration_date")
+        if exp:
+            try:
+                exp_date = date.fromisoformat(str(exp)[:10])
+                if (exp_date - today_value).days <= 3:
+                    attention += 1
+            except Exception:
+                pass
+
+    calories_stock = 0
+    for p in products:
+        try:
+            q = float(p.get("quantity") or 0)
+            cal = float(p.get("calories_per_100g") or 0)
+            unit = str(p.get("unit") or "")
+            if unit in ["г", "мл"]:
+                calories_stock += q / 100 * cal
+            elif unit in ["кг", "л"]:
+                calories_stock += q * 10 * cal
+            else:
+                calories_stock += cal
+        except Exception:
+            pass
+
     st.markdown(
-        """
-<div class="v2-action-grid">
-    <a class="v2-action-link" href="?tab=scan" target="_self">📸 Сканировать</a>
-    <a class="v2-action-link" href="?tab=fridge" target="_self">🧊 Холодильник</a>
-    <a class="v2-action-link" href="?tab=recipes" target="_self">🍳 Рецепты</a>
-    <a class="v2-action-link" href="?tab=shopping" target="_self">🛒 Покупки</a>
+        f"""
+<div class="v2-grid-4">
+    <div class="v2-card"><div class="v2-metric">{total_products}</div><div class="v2-label">продуктов дома</div></div>
+    <div class="v2-card"><div class="v2-metric">{attention}</div><div class="v2-label">требуют внимания</div></div>
+    <div class="v2-card"><div class="v2-metric">{len(DEFAULT_RECIPES)}</div><div class="v2-label">идей блюд</div></div>
+    <div class="v2-card"><div class="v2-metric">{int(calories_stock)}</div><div class="v2-label">ккал в запасах</div></div>
 </div>
 """,
         unsafe_allow_html=True,
     )
-
-
-def native_chip(text_value):
-    st.caption(text_value)
-
-
-# =========================
-# Pages
-# =========================
-
-def expiry_status(expiration_date):
-    if not expiration_date:
-        return "без срока"
-
-    try:
-        exp = date.fromisoformat(str(expiration_date)[:10])
-        days = (exp - date.today()).days
-
-        if days < 0:
-            return "просрочено"
-        if days <= 1:
-            return "срочно"
-        if days <= 3:
-            return "скоро"
-        return f"{days} дн."
-    except Exception:
-        return "без срока"
 
 
 def page_today():
@@ -865,36 +813,24 @@ def page_today():
         "🧊",
     )
 
-    attention = 0
-    calories_stock = 0
-
-    for p in products:
-        status = expiry_status(p.get("expiration_date"))
-        if status in ["просрочено", "срочно", "скоро"]:
-            attention += 1
-
-        try:
-            q = float(p.get("quantity") or 0)
-            cal = float(p.get("calories_per_100g") or 0)
-            unit = str(p.get("unit") or "")
-
-            if unit in ["г", "мл"]:
-                calories_stock += q / 100 * cal
-            elif unit in ["кг", "л"]:
-                calories_stock += q * 10 * cal
-            else:
-                calories_stock += cal
-        except Exception:
-            pass
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Продуктов дома", len(products))
-    c2.metric("Требуют внимания", attention)
-    c3.metric("Идей блюд", len(DEFAULT_RECIPES))
-    c4.metric("Ккал в запасах", int(calories_stock))
+    metric_grid(products)
 
     st.markdown("## ⚡ Быстрые действия")
-    action_links()
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        if st.button("📸 Сканировать", use_container_width=True):
+            set_tab("scan")
+    with c2:
+        if st.button("🧊 Холодильник", use_container_width=True):
+            set_tab("fridge")
+    with c3:
+        if st.button("🍳 Рецепты", use_container_width=True):
+            set_tab("recipes")
+    with c4:
+        if st.button("🛒 Покупки", use_container_width=True):
+            set_tab("shopping")
 
     st.markdown("## 🍽️ Питание сегодня")
 
@@ -902,23 +838,55 @@ def page_today():
     for user in USERS:
         totals[user] = sum(float(row.get("calories") or 0) for row in diary if row.get("person") == user)
 
-    cols = st.columns(2)
+    cards = []
 
-    for col, (user, info) in zip(cols, USERS.items()):
+    for user, info in USERS.items():
         eaten = int(totals[user])
         left = max(0, info["goal"] - eaten)
+        cards.append(
+            f"""
+<div class="v2-card v2-card-soft">
+    <h2>{info['emoji']} {user}</h2>
+    <span class="v2-chip v2-chip-green">цель: {info['goal']} ккал</span>
+    <span class="v2-chip v2-chip-blue">съедено: {eaten}</span>
+    <span class="v2-chip v2-chip-purple">осталось: {left}</span>
+    <p class="v2-label">{info['description']}</p>
+</div>
+"""
+        )
 
-        with col:
-            with st.container(border=True):
-                st.subheader(f"{info['emoji']} {user}")
-                st.write(info["description"])
-                st.metric("Цель", f"{info['goal']} ккал")
-                st.metric("Съедено", f"{eaten} ккал")
-                st.metric("Осталось", f"{left} ккал")
+    st.markdown(f'<div class="v2-grid-2">{"".join(cards)}</div>', unsafe_allow_html=True)
 
-    with st.container(border=True):
-        st.subheader("💡 Рекомендация дня")
-        st.write("Сначала используй продукты, у которых скоро закончится срок годности. Это поможет меньше выбрасывать и проще планировать меню.")
+    st.markdown(
+        """
+<div class="v2-card v2-card-warm">
+    <h2>💡 Рекомендация дня</h2>
+    <p>Сначала используй продукты, у которых скоро закончится срок годности. Это поможет меньше выбрасывать и проще планировать меню.</p>
+    <span class="v2-chip v2-chip-orange">умный совет</span>
+    <span class="v2-chip v2-chip-green">экономия продуктов</span>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def expiry_status(expiration_date):
+    if not expiration_date:
+        return "без срока", "v2-chip-blue"
+
+    try:
+        exp = date.fromisoformat(str(expiration_date)[:10])
+        days = (exp - date.today()).days
+
+        if days < 0:
+            return "просрочено", "v2-chip-red"
+        if days <= 1:
+            return "срочно", "v2-chip-red"
+        if days <= 3:
+            return "скоро", "v2-chip-orange"
+        return f"{days} дн.", "v2-chip-green"
+    except Exception:
+        return "без срока", "v2-chip-blue"
 
 
 def page_fridge():
@@ -933,7 +901,7 @@ def page_fridge():
     tab_catalog, tab_manual, tab_cards, tab_table = st.tabs(["Каталог", "Вручную", "Карточки", "Таблица"])
 
     with tab_catalog:
-        st.subheader("🧺 Большой каталог продуктов")
+        st.markdown("## 🧺 Большой каталог продуктов")
         st.caption("Выбери продукт из каталога, укажи количество и срок годности — он попадёт в холодильник.")
 
         categories = ["Все категории"] + PRODUCT_CATEGORIES
@@ -971,13 +939,20 @@ def page_fridge():
             selected_label = st.selectbox("Продукт", names, key="catalog_product_v2")
             item = filtered[names.index(selected_label)]
 
-            with st.container(border=True):
-                st.subheader(f'{item["emoji"]} {item["name"]}')
-                st.write(item["description"])
-                st.write(f'Категория: **{item["category"]}**')
-                st.write(f'Калории: **{item["calories_per_100g"]} ккал на 100 г**')
-                st.write(f'БЖУ: **Б {item["protein"]} · Ж {item["fat"]} · У {item["carbs"]}**')
-                st.write(f'Хранение: примерно **{item["storage_days"]} дн.**')
+            st.markdown(
+                f"""
+<div class="v2-card">
+    <div class="v2-photo">{item["emoji"]}</div>
+    <h2>{item["name"]}</h2>
+    <p>{item["description"]}</p>
+    <span class="v2-chip v2-chip-green">{item["category"]}</span>
+    <span class="v2-chip v2-chip-blue">{item["calories_per_100g"]} ккал на 100 г</span>
+    <span class="v2-chip v2-chip-purple">Б {item["protein"]} · Ж {item["fat"]} · У {item["carbs"]}</span>
+    <span class="v2-chip v2-chip-orange">хранение ~{item["storage_days"]} дн.</span>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
 
             with st.form("add_from_catalog_v2"):
                 c1, c2, c3 = st.columns(3)
@@ -986,9 +961,11 @@ def page_fridge():
                     quantity = st.number_input("Количество", min_value=0.0, value=1.0, step=0.1)
 
                 with c2:
-                    units = ["шт", "г", "кг", "мл", "л", "упак."]
-                    default_index = units.index(item["unit"]) if item["unit"] in units else 0
-                    unit = st.selectbox("Единица", units, index=default_index)
+                    unit = st.selectbox(
+                        "Единица",
+                        ["шт", "г", "кг", "мл", "л", "упак."],
+                        index=["шт", "г", "кг", "мл", "л", "упак."].index(item["unit"]) if item["unit"] in ["шт", "г", "кг", "мл", "л", "упак."] else 0,
+                    )
 
                 with c3:
                     expiration_date = st.date_input(
@@ -1016,7 +993,7 @@ def page_fridge():
             st.dataframe(pd.DataFrame(PRODUCT_CATALOG), use_container_width=True, hide_index=True)
 
     with tab_manual:
-        st.subheader("✍️ Добавить продукт вручную")
+        st.markdown("## ✍️ Добавить продукт вручную")
 
         with st.form("add_product_v2_manual"):
             c1, c2 = st.columns(2)
@@ -1059,32 +1036,39 @@ def page_fridge():
             cols = st.columns(3)
 
             for i, p in enumerate(products):
+                status, cls = expiry_status(p.get("expiration_date"))
+                emoji = p.get("emoji") or "🧺"
+                image = p.get("image_data")
+
                 with cols[i % 3]:
-                    with st.container(border=True):
-                        image = p.get("image_data")
-                        emoji = p.get("emoji") or "🧺"
+                    if image:
+                        photo_html = f'<div class="v2-photo"><img src="{image}"></div>'
+                    else:
+                        photo_html = f'<div class="v2-photo">{emoji}</div>'
 
-                        if image:
-                            st.image(image, use_container_width=True)
-                        else:
-                            st.markdown(f"<div class='v2-photo-native'>{emoji}</div>", unsafe_allow_html=True)
+                    st.markdown(
+                        f"""
+<div class="v2-card">
+    {photo_html}
+    <h2>{p.get("name")}</h2>
+    <span class="v2-chip v2-chip-green">{p.get("quantity")} {p.get("unit")}</span>
+    <span class="v2-chip v2-chip-blue">{p.get("calories_per_100g")} ккал</span>
+    <span class="v2-chip {cls}">{status}</span>
+    <p class="v2-label">{p.get("category") or "Другое"}</p>
+</div>
+""",
+                        unsafe_allow_html=True,
+                    )
 
-                        st.subheader(str(p.get("name")))
-                        st.write(f'Количество: **{p.get("quantity")} {p.get("unit")}**')
-                        st.write(f'Калории: **{p.get("calories_per_100g")} ккал**')
-                        st.write(f'Категория: **{p.get("category") or "Другое"}**')
-                        st.write(f'Срок: **{expiry_status(p.get("expiration_date"))}**')
-
-                        if st.button("Удалить", key=f"delete_product_{p.get('id')}", use_container_width=True):
-                            delete_product(p.get("id"))
-                            st.rerun()
+                    if st.button("Удалить", key=f"delete_product_{p.get('id')}", use_container_width=True):
+                        delete_product(p.get("id"))
+                        st.rerun()
 
     with tab_table:
         if products:
             st.dataframe(pd.DataFrame(products), use_container_width=True, hide_index=True)
         else:
             st.info("Нет продуктов.")
-
 
 def page_scan():
     hero(
@@ -1093,9 +1077,18 @@ def page_scan():
         "📸",
     )
 
-    with st.container(border=True):
-        st.subheader("AI-распознавание будет следующим шагом")
-        st.write("Сейчас фото можно добавить вручную к продукту. Далее подключим распознавание названия, срока годности, категории и калорий.")
+    st.markdown(
+        """
+<div class="v2-card v2-card-warm">
+    <h2>AI-распознавание будет следующим шагом</h2>
+    <p>Сейчас фото можно добавить вручную к продукту. Далее подключим распознавание названия, срока годности, категории и калорий.</p>
+    <span class="v2-chip v2-chip-purple">камера</span>
+    <span class="v2-chip v2-chip-blue">AI Vision</span>
+    <span class="v2-chip v2-chip-green">подтверждение</span>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
     source = st.radio("Источник фото", ["Камера", "Загрузить файл"], horizontal=True)
 
@@ -1151,46 +1144,38 @@ def page_recipes():
         "🍳",
     )
 
-    search = st.text_input("Поиск рецепта", placeholder="Например: курица, омлет, суп")
-
-    recipes = DEFAULT_RECIPES
-
-    if search.strip():
-        q = search.strip().lower()
-        recipes = [
-            r for r in recipes
-            if q in r["name"].lower()
-            or q in r["category"].lower()
-            or q in r["description"].lower()
-            or q in r["ingredients"].lower()
-        ]
-
     cols = st.columns(3)
 
-    for i, recipe in enumerate(recipes):
+    for i, recipe in enumerate(DEFAULT_RECIPES):
         with cols[i % 3]:
-            with st.container(border=True):
-                st.markdown(f"<div class='v2-photo-native'>{recipe['emoji']}</div>", unsafe_allow_html=True)
-                st.subheader(recipe["name"])
-                st.write(recipe["description"])
-                st.write(f'Категория: **{recipe["category"]}**')
-                st.write(f'Время: **{recipe["time"]}**')
-                st.write(f'Калории: **{recipe["calories"]} ккал**')
-                st.caption(f'Ингредиенты: {recipe["ingredients"]}')
+            st.markdown(
+                f"""
+<div class="v2-card">
+    <div class="v2-photo">{recipe['emoji']}</div>
+    <h2>{recipe['name']}</h2>
+    <p>{recipe['description']}</p>
+    <span class="v2-chip v2-chip-purple">{recipe['category']}</span>
+    <span class="v2-chip v2-chip-blue">{recipe['time']}</span>
+    <span class="v2-chip v2-chip-green">{recipe['calories']} ккал</span>
+    <p class="v2-label">Ингредиенты: {recipe['ingredients']}</p>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
 
-                if st.button("🍽️ Добавить в дневник", key=f"recipe_diary_{recipe['name']}", use_container_width=True):
-                    add_diary(
-                        person=st.session_state.get("user", "Мишка"),
-                        date_value=date.today(),
-                        meal="Обед",
-                        dish=recipe["name"],
-                        calories=recipe["calories"],
-                        protein=0,
-                        fat=0,
-                        carbs=0,
-                        comment="Добавлено из рецептов v2",
-                    )
-                    st.success("Добавлено в дневник.")
+            if st.button("🍽️ Добавить в дневник", key=f"recipe_diary_{recipe['name']}", use_container_width=True):
+                add_diary(
+                    person=st.session_state.get("user", "Мишка"),
+                    date_value=date.today(),
+                    meal="Обед",
+                    dish=recipe["name"],
+                    calories=recipe["calories"],
+                    protein=0,
+                    fat=0,
+                    carbs=0,
+                    comment="Добавлено из рецептов v2",
+                )
+                st.success("Добавлено в дневник.")
 
 
 def page_shopping():
@@ -1228,7 +1213,7 @@ def page_shopping():
     items = get_shopping_items()
 
     with tab_need:
-        need = [x for x in items if x.get("status") not in ["bought", "moved"]]
+        need = [x for x in items if x.get("status") != "bought"]
 
         if not need:
             st.info("Список покупок пуст.")
@@ -1237,10 +1222,16 @@ def page_shopping():
                 c1, c2 = st.columns([4, 1])
 
                 with c1:
-                    with st.container(border=True):
-                        st.subheader(str(item.get("name")))
-                        st.write(f'{item.get("quantity")} {item.get("unit")}')
-                        st.caption(item.get("category"))
+                    st.markdown(
+                        f"""
+<div class="v2-card">
+    <h3>{item.get('name')}</h3>
+    <span class="v2-chip v2-chip-green">{item.get('quantity')} {item.get('unit')}</span>
+    <span class="v2-chip v2-chip-blue">{item.get('category')}</span>
+</div>
+""",
+                        unsafe_allow_html=True,
+                    )
 
                 with c2:
                     if st.button("✅ Куплено", key=f"bought_{item.get('id')}", use_container_width=True):
@@ -1257,10 +1248,16 @@ def page_shopping():
                 c1, c2 = st.columns([4, 1])
 
                 with c1:
-                    with st.container(border=True):
-                        st.subheader(str(item.get("name")))
-                        st.write(f'{item.get("quantity")} {item.get("unit")}')
-                        st.caption(item.get("category"))
+                    st.markdown(
+                        f"""
+<div class="v2-card">
+    <h3>{item.get('name')}</h3>
+    <span class="v2-chip v2-chip-green">{item.get('quantity')} {item.get('unit')}</span>
+    <span class="v2-chip v2-chip-blue">{item.get('category')}</span>
+</div>
+""",
+                        unsafe_allow_html=True,
+                    )
 
                 with c2:
                     if st.button("🧊 В холодильник", key=f"to_fridge_{item.get('id')}", use_container_width=True):
@@ -1340,9 +1337,11 @@ def page_analytics():
     with c2:
         st.metric("Записей сегодня", len(diary))
     with c3:
-        st.metric("Покупок", len([x for x in shopping if x.get("status") not in ["bought", "moved"]]))
+        st.metric("Покупок", len([x for x in shopping if x.get("status") != "bought"]))
     with c4:
         st.metric("Калорий сегодня", int(sum(float(x.get("calories") or 0) for x in diary)))
+
+    st.markdown("## Калории по пользователям")
 
     rows = []
 
@@ -1365,11 +1364,16 @@ def page_settings():
         "⚙️",
     )
 
-    with st.container(border=True):
-        st.subheader(APP_NAME)
-        st.write(f"Версия: **{APP_VERSION}**")
-        st.write(f"Разработка: **{DEVELOPER}**")
-        st.write("Авторизация временно отключена до финальной сборки.")
+    st.markdown(
+        f"""
+<div class="v2-card">
+    <h2>{APP_NAME}</h2>
+    <p>Версия: <b>{APP_VERSION}</b></p>
+    <p>Разработка: <b>{DEVELOPER}</b></p>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
     st.markdown("## Профили")
 
@@ -1377,10 +1381,16 @@ def page_settings():
 
     for col, (user, info) in zip(cols, USERS.items()):
         with col:
-            with st.container(border=True):
-                st.subheader(f"{info['emoji']} {user}")
-                st.metric("Цель", f"{info['goal']} ккал/день")
-                st.write(info["description"])
+            st.markdown(
+                f"""
+<div class="v2-card v2-card-soft">
+    <h2>{info['emoji']} {user}</h2>
+    <span class="v2-chip v2-chip-green">{info['goal']} ккал/день</span>
+    <p>{info['description']}</p>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
 
     if st.button("Добавить демо-продукты", use_container_width=True):
         for name, quantity, unit, calories, category, exp, emoji in DEFAULT_PRODUCTS:
@@ -1389,12 +1399,315 @@ def page_settings():
         st.rerun()
 
 
+def nav_url(tab):
+    return f"?tab={tab}"
+
+
+def set_tab(tab):
+    st.session_state["tab"] = tab
+    try:
+        st.query_params["tab"] = tab
+    except Exception:
+        pass
+    st.rerun()
+
+
+def render_nav_styles():
+    st.markdown(
+        """
+<style>
+.v2-top-nav {
+    position: sticky;
+    top: 0;
+    z-index: 9999;
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+    margin: 0 0 18px 0;
+    border-radius: 24px;
+    background: rgba(255,255,255,.86);
+    border: 1px solid rgba(18,51,33,.10);
+    box-shadow: 0 14px 36px rgba(15,23,42,.08);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.v2-top-nav a,
+.v2-sidebar-link,
+.v2-bottom-nav a,
+.v2-action-link {
+    text-decoration: none !important;
+}
+
+.v2-top-nav a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 9px 10px;
+    border-radius: 17px;
+    color: #123321 !important;
+    font-weight: 900;
+    font-size: .92rem;
+    transition: all .15s ease;
+    border: 1px solid transparent;
+}
+
+.v2-top-nav a:hover {
+    background: rgba(34,197,94,.13);
+    border-color: rgba(34,197,94,.20);
+    transform: translateY(-1px);
+}
+
+.v2-top-nav a.active {
+    background: linear-gradient(135deg, rgba(34,197,94,.22), rgba(240,253,244,.96));
+    border-color: rgba(34,197,94,.30);
+    box-shadow: 0 8px 20px rgba(15,23,42,.07);
+}
+
+.v2-sidebar-link {
+    display: block;
+    padding: 10px 12px;
+    margin: 5px 0;
+    border-radius: 16px;
+    color: #123321 !important;
+    font-weight: 850;
+    border: 1px solid transparent;
+}
+
+.v2-sidebar-link:hover {
+    background: rgba(34,197,94,.12);
+    border-color: rgba(34,197,94,.18);
+}
+
+.v2-sidebar-link.active {
+    background: linear-gradient(135deg, rgba(34,197,94,.22), rgba(240,253,244,.96));
+    border-color: rgba(34,197,94,.30);
+    box-shadow: 0 8px 20px rgba(15,23,42,.06);
+}
+
+.v2-action-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    margin: 10px 0 26px 0;
+}
+
+.v2-action-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 54px;
+    border-radius: 20px;
+    color: #123321 !important;
+    font-weight: 900;
+    background: rgba(255,255,255,.94);
+    border: 1px solid rgba(18,51,33,.12);
+    box-shadow: 0 10px 24px rgba(15,23,42,.06);
+}
+
+.v2-action-link:hover {
+    background: rgba(34,197,94,.11);
+    transform: translateY(-1px);
+}
+
+.v2-bottom-nav {
+    display: none;
+}
+
+@media (max-width: 900px) {
+    .v2-top-nav {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        overflow-x: auto;
+        position: relative;
+        top: auto;
+    }
+
+    .v2-top-nav a {
+        font-size: .8rem;
+        min-height: 42px;
+        white-space: nowrap;
+    }
+
+    .v2-action-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+
+    .v2-bottom-nav {
+        position: fixed;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        z-index: 2147483647;
+        padding: 8px;
+        border-radius: 26px;
+        background: rgba(255,255,255,.96);
+        border: 1px solid rgba(18,51,33,.12);
+        box-shadow: 0 18px 48px rgba(15,23,42,.22);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        gap: 6px;
+    }
+
+    .v2-bottom-nav a {
+        color: #123321 !important;
+        border-radius: 18px;
+        padding: 8px 4px 7px 4px;
+        min-height: 48px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-weight: 900;
+        font-size: 10px;
+        line-height: 1.05;
+    }
+
+    .v2-bottom-nav a.active {
+        background: rgba(34,197,94,.18);
+    }
+
+    .v2-bottom-nav .emoji {
+        font-size: 21px;
+        line-height: 1;
+    }
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def render_top_nav():
+    render_nav_styles()
+
+    current = st.session_state.get("tab", "today")
+
+    items = [
+        ("today", "🏠 Сегодня"),
+        ("fridge", "🧊 Холодильник"),
+        ("scan", "📸 Сканер"),
+        ("recipes", "🍳 Рецепты"),
+        ("shopping", "🛒 Покупки"),
+        ("diary", "📔 Дневник"),
+        ("analytics", "📊 Аналитика"),
+        ("settings", "⚙️ Настройки"),
+    ]
+
+    links = []
+
+    for key, label in items:
+        active = "active" if current == key else ""
+        links.append(f'<a class="{active}" href="?tab={key}" target="_self">{label}</a>')
+
+    st.markdown(
+        f"""
+<div class="v2-top-nav">
+    {''.join(links)}
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def bottom_nav():
+    current = st.session_state.get("tab", "today")
+
+    items = [
+        ("today", "🏠", "Сегодня"),
+        ("fridge", "🧊", "Холод."),
+        ("scan", "📸", "Сканер"),
+        ("recipes", "🍳", "Рецепты"),
+        ("shopping", "🛒", "Покупки"),
+    ]
+
+    links = []
+
+    for key, emoji, label in items:
+        active = "active" if current == key else ""
+        links.append(
+            f'<a class="{active}" href="?tab={key}" target="_self"><span class="emoji">{emoji}</span><span>{label}</span></a>'
+        )
+
+    st.markdown(
+        f"""
+<div class="v2-bottom-nav">
+    {''.join(links)}
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar():
+    with st.sidebar:
+        st.markdown("## 🥦 Умный холодильник")
+        st.caption(f"{APP_VERSION} · {DEVELOPER}")
+        st.markdown("---")
+
+        current = st.session_state.get("tab", "today")
+
+        items = [
+            ("today", "🏠 Сегодня"),
+            ("fridge", "🧊 Холодильник"),
+            ("scan", "📸 Сканер"),
+            ("recipes", "🍳 Рецепты"),
+            ("shopping", "🛒 Покупки"),
+            ("diary", "📔 Дневник"),
+            ("analytics", "📊 Аналитика"),
+            ("settings", "⚙️ Настройки"),
+        ]
+
+        html = ""
+
+        for key, label in items:
+            active = "active" if current == key else ""
+            html += f'<a class="v2-sidebar-link {active}" href="?tab={key}" target="_self">{label}</a>'
+
+        st.markdown(html, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        user = st.session_state.get("user", "Мишка")
+        info = USERS.get(user, USERS["Мишка"])
+
+        st.markdown(
+            f"""
+<div class="v2-card v2-card-soft" style="padding:14px;border-radius:18px;margin-top:10px;">
+    <b>{info["emoji"]} Активный пользователь</b><br>
+    <span style="color:#647067;">{user}</span>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+        st.caption("PIN и авторизация временно отключены до финальной сборки.")
+
+def render_action_links():
+    st.markdown(
+        """
+<div class="v2-action-grid">
+    <a class="v2-action-link" href="?tab=scan" target="_self">📸 Сканировать</a>
+    <a class="v2-action-link" href="?tab=fridge" target="_self">🧊 Холодильник</a>
+    <a class="v2-action-link" href="?tab=recipes" target="_self">🍳 Рецепты</a>
+    <a class="v2-action-link" href="?tab=shopping" target="_self">🛒 Покупки</a>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
 def render_app():
     apply_design()
-    init_state()
+    init_tab()
     bottom_nav()
-    sidebar()
-    top_nav()
+    render_sidebar()
+    render_top_nav()
 
     tab = st.session_state.get("tab", "today")
 
@@ -1415,12 +1728,25 @@ def render_app():
     else:
         page_today()
 
-
 def main():
+    """
+    Временно отключенная авторизация для активной разработки v2.
+
+    Сейчас приложение сразу открывается без PIN.
+    Пользователь по умолчанию: Мишка.
+
+    Авторизацию вернём в конце, когда закончим дизайн, каталоги,
+    фото, сканер и основную логику.
+    """
     ensure_schema()
     seed_if_empty()
-    render_app()
 
+    if "user" not in st.session_state:
+        st.session_state["user"] = "Мишка"
+
+    st.session_state["authenticated"] = True
+
+    render_app()
 
 if __name__ == "__main__":
     main()

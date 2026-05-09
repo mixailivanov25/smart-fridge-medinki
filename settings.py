@@ -1,5 +1,5 @@
 APP_NAME = "Умный холодильник Мединки"
-APP_VERSION = "v1.1.2"
+APP_VERSION = "v1.2"
 DEVELOPER = "Иванов Михаил"
 
 PEOPLE = ["Мишка", "Мединка"]
