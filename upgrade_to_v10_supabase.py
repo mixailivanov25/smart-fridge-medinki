@@ -1,3 +1,18 @@
+from pathlib import Path
+from datetime import datetime
+import shutil
+import py_compile
+import subprocess
+
+
+PROJECT_DIR = Path(__file__).resolve().parent
+
+DB_FILE = PROJECT_DIR / "database.py"
+SETTINGS_FILE = PROJECT_DIR / "settings.py"
+REQ_FILE = PROJECT_DIR / "requirements.txt"
+
+
+DATABASE_PY = r'''
 import os
 from datetime import datetime
 
@@ -1138,3 +1153,178 @@ def clear_all_data():
     execute("DELETE FROM nutrition_diary")
     execute("DELETE FROM shopping_items")
     execute("DELETE FROM custom_recipes")
+'''
+
+
+def run(command, check=False):
+    print(f"\n▶️ {command}")
+
+    result = subprocess.run(
+        command,
+        shell=True,
+        cwd=PROJECT_DIR,
+        text=True,
+        capture_output=True
+    )
+
+    if result.stdout:
+        print(result.stdout)
+
+    if result.stderr:
+        print(result.stderr)
+
+    if check and result.returncode != 0:
+        raise RuntimeError(f"Команда завершилась с ошибкой: {command}")
+
+    return result
+
+
+def backup_files():
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = PROJECT_DIR / f"backup_before_v10_supabase_{timestamp}"
+    backup_dir.mkdir(exist_ok=True)
+
+    for file_path in [DB_FILE, SETTINGS_FILE, REQ_FILE]:
+        if file_path.exists():
+            shutil.copy2(file_path, backup_dir / file_path.name)
+
+    print(f"📦 Backup создан: {backup_dir.name}")
+
+
+def update_settings():
+    if SETTINGS_FILE.exists():
+        text = SETTINGS_FILE.read_text(encoding="utf-8")
+    else:
+        text = ""
+
+    if "APP_VERSION" in text:
+        import re
+        text = re.sub(r'APP_VERSION\s*=\s*"[^"]+"', 'APP_VERSION = "v1.0"', text)
+    else:
+        text += '\nAPP_VERSION = "v1.0"\n'
+
+    SETTINGS_FILE.write_text(text, encoding="utf-8")
+    print("✅ settings.py обновлён до v1.0")
+
+
+def update_requirements():
+    existing = ""
+
+    if REQ_FILE.exists():
+        existing = REQ_FILE.read_text(encoding="utf-8")
+
+    required = [
+        "streamlit",
+        "pandas",
+        "SQLAlchemy",
+        "psycopg2-binary"
+    ]
+
+    lines = [line.strip() for line in existing.splitlines() if line.strip()]
+    lower = {line.lower() for line in lines}
+
+    for item in required:
+        if item.lower() not in lower:
+            lines.append(item)
+
+    REQ_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("✅ requirements.txt обновлён")
+
+
+def write_database():
+    DB_FILE.write_text(DATABASE_PY.strip() + "\n", encoding="utf-8")
+    print("✅ database.py заменён на Supabase-ready версию")
+
+
+def compile_files():
+    print("\nПроверяю синтаксис...")
+
+    files = [
+        "database.py",
+        "app.py",
+        "settings.py",
+        "recipes.py",
+        "demo_data.py",
+        "product_catalog.py",
+        "dish_catalog.py",
+        "menu_engine.py"
+    ]
+
+    ok = True
+
+    for file_name in files:
+        path = PROJECT_DIR / file_name
+
+        if not path.exists():
+            print(f"⚠️ Нет файла: {file_name}")
+            continue
+
+        try:
+            py_compile.compile(str(path), doraise=True)
+            print(f"✅ OK: {file_name}")
+        except Exception as e:
+            ok = False
+            print(f"❌ Ошибка в {file_name}:")
+            print(e)
+
+    return ok
+
+
+def git_commit_push():
+    if not (PROJECT_DIR / ".git").exists():
+        print("ℹ️ Git не найден, push пропущен.")
+        return
+
+    run("git add .")
+    status = run("git status --short")
+
+    if not status.stdout.strip():
+        print("ℹ️ Нет изменений для коммита.")
+        return
+
+    run('git commit -m "v1.0 Supabase persistent database"', check=False)
+    push = run("git push", check=False)
+
+    if push.returncode == 0:
+        print("✅ Изменения отправлены на GitHub.")
+    else:
+        print("⚠️ Не удалось сделать git push автоматически.")
+        print("Выполни вручную:")
+        print("git add .")
+        print('git commit -m "v1.0 Supabase persistent database"')
+        print("git push")
+
+
+def main():
+    print("====================================")
+    print(" v1.0 Supabase Edition")
+    print(" Умный холодильник Мединки")
+    print("====================================")
+
+    backup_files()
+    update_settings()
+    update_requirements()
+    write_database()
+
+    ok = compile_files()
+
+    if not ok:
+        print("⚠️ Есть ошибки синтаксиса. Пришли текст ошибки.")
+        return
+
+    git_commit_push()
+
+    print("\n✅ Готово.")
+    print("")
+    print("Теперь нужно:")
+    print("1. В Streamlit Cloud открыть приложение.")
+    print("2. Settings → Secrets.")
+    print("3. Добавить DATABASE_URL.")
+    print("4. Reboot app.")
+    print("")
+    print("Формат секрета:")
+    print('DATABASE_URL = "postgresql://postgres.xxxxx:password@host:6543/postgres"')
+
+
+if __name__ == "__main__":
+    main()
