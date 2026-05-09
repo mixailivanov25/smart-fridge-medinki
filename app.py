@@ -812,7 +812,7 @@ def get_current_person():
 def logout_user():
     st.session_state["auth_ok"] = False
     st.session_state["current_person"] = ""
-    st.session_state["main_navigation"] = "Главная"
+    st.session_state["main_navigation"] = "Быстрый экран"
 
 
 def render_login_screen():
@@ -853,7 +853,7 @@ def render_login_screen():
             if pin and pin == expected_pin:
                 st.session_state["auth_ok"] = True
                 st.session_state["current_person"] = person
-                st.session_state["main_navigation"] = "Главная"
+                st.session_state["main_navigation"] = "Быстрый экран"
                 st.success(f"Добро пожаловать, {person}!")
                 st.rerun()
             else:
@@ -881,6 +881,150 @@ def render_current_user_sidebar():
 
         if st.sidebar.button("🚪 Выйти"):
             logout_user()
+            st.rerun()
+
+
+
+
+# -----------------------------
+# v1.2 Speed helpers
+# -----------------------------
+@st.cache_data(ttl=15)
+def cached_fast_products():
+    return get_products()
+
+
+@st.cache_data(ttl=30)
+def cached_fast_profiles():
+    return get_user_profiles()
+
+
+@st.cache_data(ttl=15)
+def cached_fast_daily_calories(person, diary_date):
+    return get_daily_calories(person, diary_date)
+
+
+@st.cache_data(ttl=20)
+def cached_fast_recipe_matches(products_as_tuple):
+    products_list = list(products_as_tuple)
+    return get_recipe_matches(products_list)
+
+
+def clear_app_cache():
+    try:
+        st.cache_data.clear()
+    except Exception:
+        pass
+
+    try:
+        st.cache_resource.clear()
+    except Exception:
+        pass
+
+
+def render_speed_refresh_button(location="main"):
+    if st.button("🔄 Обновить данные", key=f"refresh_data_{location}", use_container_width=True):
+        clear_app_cache()
+        st.success("Данные обновлены.")
+        st.rerun()
+
+
+def get_today_name_ru():
+    day_names = [
+        "Понедельник",
+        "Вторник",
+        "Среда",
+        "Четверг",
+        "Пятница",
+        "Суббота",
+        "Воскресенье"
+    ]
+
+    return day_names[date.today().weekday()]
+
+
+def get_urgent_products_for_fast_screen(products):
+    urgent = []
+
+    for product in products:
+        status_text, status_color = expiration_status(product[6])
+
+        if status_color in ["yellow", "red"]:
+            urgent.append((product, status_text, status_color))
+
+    return urgent
+
+
+def render_fast_calorie_card(person):
+    today_str = str(date.today())
+    profile = get_user_profile(person)
+
+    if profile:
+        target = profile[1]
+    else:
+        target = 2000
+
+    eaten = cached_fast_daily_calories(person, today_str)
+    left = target - eaten
+
+    progress = min(eaten / target, 1.0) if target else 0
+
+    if left >= 0:
+        status_class = "pill-green"
+        status_text = f"Осталось: {left} ккал"
+    else:
+        status_class = "pill-red"
+        status_text = f"Перебор: {abs(left)} ккал"
+
+    st.markdown(f"""
+    <div class="person-card">
+        <h3>{get_person_emoji(person)} {person}</h3>
+        <span class="status-pill pill-blue">Цель: {target} ккал</span>
+        <span class="status-pill pill-purple">Съедено: {eaten} ккал</span>
+        <span class="status-pill {status_class}">{status_text}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.progress(progress)
+
+
+def render_fast_action_buttons():
+    st.subheader("⚡ Быстрые действия")
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        if st.button("➕ Добавить еду", use_container_width=True, key="fast_add_food"):
+            st.session_state["main_navigation"] = "Дневник питания"
+            st.rerun()
+
+    with c2:
+        if st.button("🛒 Добавить покупку", use_container_width=True, key="fast_add_purchase"):
+            st.session_state["main_navigation"] = "Умные покупки"
+            st.rerun()
+
+    c3, c4 = st.columns(2)
+
+    with c3:
+        if st.button("🧊 Холодильник", use_container_width=True, key="fast_open_fridge"):
+            st.session_state["main_navigation"] = "Мой холодильник"
+            st.rerun()
+
+    with c4:
+        if st.button("⏰ Скоро испортится", use_container_width=True, key="fast_expiring"):
+            st.session_state["main_navigation"] = "Скоро испортится"
+            st.rerun()
+
+    c5, c6 = st.columns(2)
+
+    with c5:
+        if st.button("🗓️ Меню", use_container_width=True, key="fast_menu"):
+            st.session_state["main_navigation"] = "Меню на неделю"
+            st.rerun()
+
+    with c6:
+        if st.button("📊 Аналитика", use_container_width=True, key="fast_analytics"):
+            st.session_state["main_navigation"] = "Аналитика"
             st.rerun()
 
 
@@ -1048,9 +1192,12 @@ if st.sidebar.button("🧪 Быстро заполнить демо-данным
     st.rerun()
 
 st.sidebar.caption(f"{APP_VERSION} · {DEVELOPER}")
+
+render_speed_refresh_button("sidebar")
 st.sidebar.caption("📱 Откройте ссылку на телефоне и добавьте на главный экран")
 
 nav_labels = {
+    "Быстрый экран": "📱 Быстрый экран",
     "Главная": "🏠 Главная",
     "Семейный режим": "👨‍👩‍👧 Семейный режим",
     "Сегодня": "📅 Сегодня",
@@ -1085,7 +1232,145 @@ st.markdown(f"<div class='app-title'>🥦 {APP_NAME}</div>", unsafe_allow_html=T
 st.markdown("<div class='app-subtitle'>Холодильник, меню, рецепты, покупки и списание продуктов.</div>", unsafe_allow_html=True)
 
 
-if page == "Главная":
+
+
+if page == "Быстрый экран":
+    st.header("📱 Быстрый экран")
+
+    current_person = get_current_person()
+    today_name = get_today_name_ru()
+
+    render_page_intro(
+        "Быстрый мобильный экран",
+        "Самые нужные действия на одном экране: калории, меню на сегодня, холодильник, покупки и срочные продукты.",
+        "📱"
+    )
+
+    render_current_datetime_card()
+
+    render_speed_refresh_button("fast_screen_top")
+
+    if current_person:
+        st.markdown(f"""
+        <div class="gradient-card">
+            <h3>{get_person_emoji(current_person)} Активный пользователь: {current_person}</h3>
+            <p>Сегодня: {today_name}. Быстрые действия будут удобнее для текущего пользователя.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Активный пользователь не выбран.")
+
+    render_fast_action_buttons()
+
+    st.divider()
+
+    st.subheader("🍽️ Калории сегодня")
+
+    if current_person:
+        render_fast_calorie_card(current_person)
+
+        other_people = [person for person in PEOPLE if person != current_person]
+
+        with st.expander("Показать второго пользователя"):
+            for person in other_people:
+                render_fast_calorie_card(person)
+    else:
+        cols = st.columns(2)
+
+        for index, person in enumerate(PEOPLE):
+            with cols[index % 2]:
+                render_fast_calorie_card(person)
+
+    st.divider()
+
+    st.subheader("⏰ Срочные продукты")
+
+    try:
+        fast_products = cached_fast_products()
+        urgent_products = get_urgent_products_for_fast_screen(fast_products)
+
+        if not urgent_products:
+            st.success("Срочных продуктов нет.")
+        else:
+            for product, status_text, status_color in urgent_products[:5]:
+                badge = "badge-red" if status_color == "red" else "badge-yellow"
+
+                st.markdown(f"""
+                <div class="card">
+                    <h3>{product[1]}</h3>
+                    <p><b>{product[2]}</b> {product[3]} · {product[5] or "Без категории"}</p>
+                    <span class="{badge}">{status_text}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            if len(urgent_products) > 5:
+                st.caption(f"Ещё продуктов требуют внимания: {len(urgent_products) - 5}")
+
+    except Exception as e:
+        st.error(f"Не удалось загрузить срочные продукты: {e}")
+
+    st.divider()
+
+    st.subheader("🗓️ Меню на сегодня")
+
+    try:
+        fast_products = cached_fast_products()
+
+        people_to_show = [current_person] if current_person else PEOPLE
+
+        for person in people_to_show:
+            if not person:
+                continue
+
+            menu_data = build_personal_week_menu(person, fast_products)
+
+            if not menu_data:
+                st.warning(f"Не удалось построить меню для {person}.")
+                continue
+
+            day_plan = next(
+                (day for day in menu_data["week"] if day["day"] == today_name),
+                None
+            )
+
+            if not day_plan:
+                st.info(f"На сегодня нет плана для {person}.")
+                continue
+
+            st.markdown(f"""
+            <div class="menu-day-card">
+                <h3>{get_person_emoji(person)} Сегодня для {get_person_genitive(person)}</h3>
+                <span class="status-pill pill-blue">Итого: {day_plan["calories"]} ккал</span>
+                <span class="status-pill pill-gray">Цель: {day_plan["target_calories"]} ккал</span>
+                <span class="status-pill pill-green">{day_plan["status"]}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            for meal in day_plan["meals"]:
+                recipe = meal["recipe"]
+                meta = get_dish_metadata(recipe["name"])
+                fav = "❤️" if meal["is_favorite"] else ""
+
+                st.markdown(f"""
+                <div class="menu-meal">
+                    <b>{meal["slot"]}:</b> {meta.get("emoji", "🍽️")} {recipe["name"]} {fav}<br>
+                    <span class="status-pill pill-blue">{recipe["calories"]} ккал</span>
+                    <span class="status-pill pill-purple">{recipe["category"]}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+    except Exception as e:
+        st.error(f"Не удалось построить меню на сегодня: {e}")
+
+    st.divider()
+
+    st.caption(
+        "Быстрый экран использует кэш на несколько секунд, чтобы приложение быстрее открывалось на телефоне. "
+        "Если данные не обновились сразу — нажмите «Обновить данные»."
+    )
+
+
+elif page == "Главная":
     total_products = len(products)
     expiring_count = 0
 
