@@ -210,6 +210,247 @@ st.markdown("""
         font-size: 44px;
         line-height: 1;
     }
+
+
+    /* -----------------------------
+       v0.9.1 Mobile Polish
+       ----------------------------- */
+
+    .mobile-install-card {
+        background: linear-gradient(135deg, #f1fff6, #ffffff);
+        padding: 20px 22px;
+        border-radius: 24px;
+        border: 1px solid #d7f5e2;
+        box-shadow: 0 12px 30px rgba(22, 48, 32, 0.07);
+        margin-bottom: 18px;
+    }
+
+    .mobile-install-card h3 {
+        margin-bottom: 8px;
+        color: #163020;
+    }
+
+    .mobile-step {
+        display: inline-block;
+        background: #e7f8ef;
+        color: #147a3d;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 800;
+        margin-right: 6px;
+        margin-bottom: 6px;
+    }
+
+    .mobile-home-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-bottom: 18px;
+    }
+
+    .mobile-action-card {
+        background: white;
+        border: 1px solid #e8f3ed;
+        border-radius: 22px;
+        padding: 18px;
+        box-shadow: 0 10px 26px rgba(22, 48, 32, 0.07);
+        text-align: center;
+    }
+
+    .mobile-action-card .icon {
+        font-size: 34px;
+        margin-bottom: 8px;
+    }
+
+    .mobile-action-card .title {
+        font-weight: 900;
+        color: #163020;
+        font-size: 16px;
+    }
+
+    .mobile-action-card .text {
+        color: #6b756e;
+        font-size: 13px;
+        margin-top: 4px;
+    }
+
+    /* Make Streamlit buttons more touch-friendly */
+    div.stButton > button {
+        border-radius: 14px;
+        min-height: 42px;
+        font-weight: 700;
+    }
+
+    div.stDownloadButton > button {
+        border-radius: 14px;
+        min-height: 42px;
+        font-weight: 700;
+    }
+
+    /* Inputs */
+    div[data-baseweb="input"] {
+        border-radius: 14px;
+    }
+
+    div[data-baseweb="select"] {
+        border-radius: 14px;
+    }
+
+    textarea {
+        border-radius: 14px !important;
+    }
+
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            padding-top: 1rem !important;
+            max-width: 100% !important;
+        }
+
+        .app-title {
+            font-size: 28px !important;
+            line-height: 1.12 !important;
+            letter-spacing: -0.5px !important;
+        }
+
+        .app-subtitle {
+            font-size: 14px !important;
+            margin-bottom: 16px !important;
+        }
+
+        h1 {
+            font-size: 28px !important;
+        }
+
+        h2 {
+            font-size: 24px !important;
+        }
+
+        h3 {
+            font-size: 20px !important;
+        }
+
+        .gradient-card {
+            padding: 20px !important;
+            border-radius: 22px !important;
+            margin-bottom: 16px !important;
+        }
+
+        .gradient-card h3 {
+            font-size: 22px !important;
+        }
+
+        .soft-card,
+        .card,
+        .recipe-card,
+        .person-card,
+        .favorite-card,
+        .menu-day-card,
+        .catalog-card,
+        .dish-card,
+        .mobile-install-card {
+            padding: 16px !important;
+            border-radius: 20px !important;
+            margin-bottom: 14px !important;
+        }
+
+        .big-number {
+            font-size: 28px !important;
+        }
+
+        .small-label {
+            font-size: 13px !important;
+        }
+
+        .status-pill,
+        .badge-green,
+        .badge-yellow,
+        .badge-red {
+            font-size: 12px !important;
+            padding: 5px 9px !important;
+            margin-bottom: 5px !important;
+        }
+
+        .emoji-big {
+            font-size: 34px !important;
+        }
+
+        .mobile-home-grid {
+            grid-template-columns: 1fr !important;
+            gap: 10px !important;
+        }
+
+        .mobile-action-card {
+            text-align: left !important;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px !important;
+        }
+
+        .mobile-action-card .icon {
+            font-size: 30px !important;
+            margin-bottom: 0 !important;
+        }
+
+        .menu-meal {
+            padding: 11px 12px !important;
+            border-radius: 16px !important;
+        }
+
+        .footer {
+            font-size: 12px !important;
+            padding: 12px 14px !important;
+            border-radius: 14px !important;
+        }
+
+        /* Make tables less painful on mobile */
+        div[data-testid="stDataFrame"] {
+            overflow-x: auto !important;
+            border-radius: 16px !important;
+        }
+
+        /* Larger tabs tap area */
+        button[data-baseweb="tab"] {
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+            min-height: 42px !important;
+            font-weight: 700 !important;
+        }
+
+        /* Sidebar radio labels */
+        section[data-testid="stSidebar"] label {
+            font-size: 15px !important;
+            line-height: 1.4 !important;
+        }
+
+        section[data-testid="stSidebar"] {
+            background: #f3f7f5 !important;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .app-title {
+            font-size: 25px !important;
+        }
+
+        .gradient-card p,
+        .soft-card p,
+        .mobile-install-card p {
+            font-size: 14px !important;
+        }
+
+        .status-pill,
+        .badge-green,
+        .badge-yellow,
+        .badge-red {
+            display: inline-block !important;
+        }
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -424,7 +665,7 @@ def render_quick_actions():
     c1, c2, c3 = st.columns(3)
 
     with c1:
-        if st.button("➕ Добавить еду", use_container_width=True):
+        if st.button("➕ Добавить еду в дневник", use_container_width=True):
             st.session_state["main_navigation"] = "Дневник питания"
             st.rerun()
 
@@ -476,6 +717,50 @@ def render_today_calorie_cards():
             """, unsafe_allow_html=True)
 
             st.progress(progress)
+
+
+
+
+def render_mobile_install_tip():
+    st.markdown("""
+    <div class="mobile-install-card">
+        <h3>📱 Можно пользоваться как приложением</h3>
+        <p>
+            Откройте эту страницу на телефоне и добавьте её на главный экран.
+            Так «Холодильник Мединки» будет запускаться почти как обычное приложение.
+        </p>
+        <span class="mobile-step">Android: Chrome → ⋮ → Добавить на главный экран</span>
+        <span class="mobile-step">iPhone: Safari → Поделиться → На экран Домой</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_mobile_start_cards():
+    st.markdown("""
+    <div class="mobile-home-grid">
+        <div class="mobile-action-card">
+            <div class="icon">📅</div>
+            <div>
+                <div class="title">Сегодня</div>
+                <div class="text">План питания, калории и срочные продукты.</div>
+            </div>
+        </div>
+        <div class="mobile-action-card">
+            <div class="icon">🧊</div>
+            <div>
+                <div class="title">Холодильник</div>
+                <div class="text">Остатки, сроки годности и продукты.</div>
+            </div>
+        </div>
+        <div class="mobile-action-card">
+            <div class="icon">🛒</div>
+            <div>
+                <div class="title">Покупки</div>
+                <div class="text">Список покупок и перенос в холодильник.</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def render_person_card(profile):
@@ -639,6 +924,7 @@ if st.sidebar.button("🧪 Быстро заполнить демо-данным
     st.rerun()
 
 st.sidebar.caption(f"{APP_VERSION} · {DEVELOPER}")
+st.sidebar.caption("📱 Откройте ссылку на телефоне и добавьте на главный экран")
 
 nav_labels = {
     "Главная": "🏠 Главная",
