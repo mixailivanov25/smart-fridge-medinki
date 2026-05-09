@@ -4,7 +4,7 @@ from datetime import datetime, date
 import pandas as pd
 import streamlit as st
 
-from settings import APP_NAME, APP_VERSION, DEVELOPER, PEOPLE, NUTRITION_GOALS, APP_TAGLINE
+from settings import APP_NAME, APP_VERSION, DEVELOPER, PEOPLE, NUTRITION_GOALS, APP_TAGLINE, DEFAULT_AUTH_PINS
 from demo_data import load_demo_products, reset_everything_and_load_demo
 from database import (
     init_db,
@@ -660,7 +660,11 @@ def render_current_datetime_card():
 
 
 def render_quick_actions():
-    st.subheader("⚡ Быстрые действия")
+    current_person = get_current_person()
+    if current_person:
+        st.subheader(f"⚡ Быстрые действия · Активный пользователь: {current_person}")
+    else:
+        st.subheader("⚡ Быстрые действия")
 
     c1, c2, c3 = st.columns(3)
 
@@ -761,6 +765,116 @@ def render_mobile_start_cards():
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+
+
+
+# -----------------------------
+# v1.1 Auth & Family Mode
+# -----------------------------
+def get_auth_pins():
+    """
+    PIN-коды можно задать в Streamlit Secrets:
+    AUTH_PIN_MISHKA = "1234"
+    AUTH_PIN_MEDINKA = "5678"
+
+    Если secrets не заданы, используются DEFAULT_AUTH_PINS из settings.py.
+    """
+    pins = dict(DEFAULT_AUTH_PINS)
+
+    try:
+        if "AUTH_PIN_MISHKA" in st.secrets:
+            pins["Мишка"] = str(st.secrets["AUTH_PIN_MISHKA"])
+
+        if "AUTH_PIN_MEDINKA" in st.secrets:
+            pins["Мединка"] = str(st.secrets["AUTH_PIN_MEDINKA"])
+    except Exception:
+        pass
+
+    return pins
+
+
+def is_authenticated():
+    return bool(st.session_state.get("auth_ok", False))
+
+
+def get_current_person():
+    return st.session_state.get("current_person", "")
+
+
+def logout_user():
+    st.session_state["auth_ok"] = False
+    st.session_state["current_person"] = ""
+    st.session_state["main_navigation"] = "Главная"
+
+
+def render_login_screen():
+    st.markdown(f"<div class='app-title'>🥦 {APP_NAME}</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='app-subtitle'>Семейный вход в холодильник Мединки</div>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown("""
+    <div class="gradient-card">
+        <h3>🔐 Вход в приложение</h3>
+        <p>
+            Приложение опубликовано в интернете, поэтому мы добавили простой PIN-код,
+            чтобы данные холодильника, покупок и дневника не меняли случайные люди.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="soft-card">
+        <h3>👨‍👩‍👧 Кто входит?</h3>
+        <p class="muted">Выберите пользователя и введите PIN-код.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    pins = get_auth_pins()
+
+    with st.form("login_form"):
+        person = st.selectbox("Пользователь", PEOPLE)
+        pin = st.text_input("PIN-код", type="password", placeholder="Введите PIN")
+
+        submitted = st.form_submit_button("🔓 Войти")
+
+        if submitted:
+            expected_pin = str(pins.get(person, ""))
+
+            if pin and pin == expected_pin:
+                st.session_state["auth_ok"] = True
+                st.session_state["current_person"] = person
+                st.session_state["main_navigation"] = "Главная"
+                st.success(f"Добро пожаловать, {person}!")
+                st.rerun()
+            else:
+                st.error("Неверный PIN-код.")
+
+    with st.expander("ℹ️ Подсказка для первого входа"):
+        st.write(
+            "Если вы ещё не меняли PIN-коды, временные значения: "
+            "Мишка — 1111, Мединка — 2222. "
+            "После проверки лучше заменить их в Streamlit Cloud Secrets."
+        )
+
+
+def require_auth():
+    if not is_authenticated():
+        render_login_screen()
+        st.stop()
+
+
+def render_current_user_sidebar():
+    current_person = get_current_person()
+
+    if current_person:
+        st.sidebar.success(f"{get_person_emoji(current_person)} Вы вошли как: {current_person}")
+
+        if st.sidebar.button("🚪 Выйти"):
+            logout_user()
+            st.rerun()
 
 
 def render_person_card(profile):
@@ -914,6 +1028,9 @@ def render_week_menu_for_person(menu_data):
             """, unsafe_allow_html=True)
 
 
+# v1.1 auth gate
+require_auth()
+
 st.sidebar.markdown(f"## 🥦 {APP_NAME}")
 st.sidebar.markdown(f"<div class='sidebar-text'>{APP_TAGLINE}</div>", unsafe_allow_html=True)
 st.sidebar.divider()
@@ -928,6 +1045,7 @@ st.sidebar.caption("📱 Откройте ссылку на телефоне и 
 
 nav_labels = {
     "Главная": "🏠 Главная",
+    "Семейный режим": "👨‍👩‍👧 Семейный режим",
     "Сегодня": "📅 Сегодня",
     "Дневник питания": "📔 Дневник питания",
     "Аналитика": "📊 Аналитика",
@@ -1018,6 +1136,89 @@ if page == "Главная":
             """, unsafe_allow_html=True)
 
 
+
+
+
+
+elif page == "Семейный режим":
+    st.header("👨‍👩‍👧 Семейный режим")
+
+    render_page_intro(
+        "Пользователи холодильника Мединки",
+        "Здесь видно, кто сейчас вошёл в приложение, можно переключить пользователя и посмотреть настройки Мишки и Мединки.",
+        "👨‍👩‍👧"
+    )
+
+    current_person = get_current_person()
+
+    if current_person:
+        st.markdown(f"""
+        <div class="gradient-card">
+            <h3>{get_person_emoji(current_person)} Сейчас активен: {current_person}</h3>
+            <p>
+                Быстрые действия, дневник питания и любимые блюда можно вести от имени выбранного пользователя.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.warning("Пользователь не выбран.")
+
+    st.subheader("👥 Профили")
+
+    profiles = get_user_profiles()
+
+    if profiles:
+        cols = st.columns(2)
+
+        for index, profile in enumerate(profiles):
+            with cols[index % 2]:
+                render_person_card(profile)
+
+    st.divider()
+
+    st.subheader("🔄 Переключить пользователя")
+
+    st.info("Для переключения нужно ввести PIN нового пользователя.")
+
+    pins = get_auth_pins()
+
+    with st.form("switch_user_form"):
+        new_person = st.selectbox("Кто будет пользоваться?", PEOPLE, key="switch_user_person")
+        new_pin = st.text_input("PIN-код", type="password", key="switch_user_pin")
+
+        submitted = st.form_submit_button("🔄 Переключиться")
+
+        if submitted:
+            expected_pin = str(pins.get(new_person, ""))
+
+            if new_pin and new_pin == expected_pin:
+                st.session_state["auth_ok"] = True
+                st.session_state["current_person"] = new_person
+                st.success(f"Теперь активен пользователь: {new_person}")
+                st.rerun()
+            else:
+                st.error("Неверный PIN-код.")
+
+    st.divider()
+
+    st.subheader("🔐 Безопасность")
+
+    st.markdown("""
+    <div class="soft-card">
+        <h3>Как поменять PIN-коды?</h3>
+        <p>
+            Откройте Streamlit Cloud → Manage app → Settings → Secrets
+            и добавьте свои значения:
+        </p>
+        <pre>
+AUTH_PIN_MISHKA = "ваш_PIN_для_Мишки"
+AUTH_PIN_MEDINKA = "ваш_PIN_для_Мединки"
+        </pre>
+        <p class="muted">
+            После сохранения secrets нужно перезапустить приложение через Reboot.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 elif page == "Сегодня":
