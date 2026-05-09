@@ -7,6 +7,7 @@ import streamlit as st
 from settings import APP_NAME, APP_VERSION, DEVELOPER, PEOPLE, NUTRITION_GOALS, APP_TAGLINE, DEFAULT_AUTH_PINS
 from demo_data import load_demo_products, reset_everything_and_load_demo
 from database import (
+    get_db_kind,
     init_db,
     add_or_update_product,
     get_products,
@@ -61,9 +62,15 @@ st.set_page_config(
     layout="wide"
 )
 
-init_db()
-ensure_v08_tables()
-ensure_v09_tables()
+@st.cache_resource
+def bootstrap_database_once():
+    init_db()
+    ensure_v08_tables()
+    ensure_v09_tables()
+    return True
+
+
+bootstrap_database_once()
 
 
 st.markdown("""
@@ -1049,6 +1056,7 @@ nav_labels = {
     "Сегодня": "📅 Сегодня",
     "Дневник питания": "📔 Дневник питания",
     "Аналитика": "📊 Аналитика",
+    "Стресс-тест": "🧪 Стресс-тест",
     "Мои рецепты": "📝 Мои рецепты",
     "Умные покупки": "🛒 Умные покупки",
     "Скоро испортится": "⏰ Скоро испортится",
@@ -2239,6 +2247,422 @@ elif page == "Мои рецепты":
 
                             st.success(f"«{name}» добавлено в любимые блюда {get_person_genitive(person)}.")
                             st.rerun()
+
+
+
+
+elif page == "Стресс-тест":
+    st.header("🧪 Стресс-тест приложения")
+
+    render_page_intro(
+        "Проверка связок приложения, облака и базы данных",
+        "Этот раздел проверяет ключевые функции: базу данных, холодильник, дневник, покупки, любимые блюда, свои рецепты, меню и историю.",
+        "🧪"
+    )
+
+    st.warning(
+        "Стресс-тест создаёт временные записи с префиксом __stress_test__ "
+        "и затем пытается их удалить. Тест не принимает недельное меню и не списывает реальные продукты."
+    )
+
+    def add_result(results, name, ok, details=""):
+        results.append({
+            "Проверка": name,
+            "Статус": "✅ OK" if ok else "❌ Ошибка",
+            "Детали": details
+        })
+
+    def cleanup_products_by_name(product_name):
+        deleted = 0
+
+        for product in get_products():
+            if str(product[1]).lower().strip() == product_name.lower().strip():
+                delete_product(product[0])
+                deleted += 1
+
+        return deleted
+
+    def cleanup_shopping_by_name(product_name):
+        deleted = 0
+
+        try:
+            items = get_shopping_items(include_bought=True)
+
+            for item in items:
+                if str(item[1]).lower().strip() == product_name.lower().strip():
+                    delete_shopping_item(item[0])
+                    deleted += 1
+        except Exception:
+            pass
+
+        return deleted
+
+    def cleanup_diary_by_dish(dish_name):
+        deleted = 0
+
+        try:
+            entries = get_nutrition_diary_entries(limit=1000)
+
+            for entry in entries:
+                if str(entry[4]).lower().strip() == dish_name.lower().strip():
+                    delete_nutrition_diary_entry(entry[0])
+                    deleted += 1
+        except Exception:
+            pass
+
+        return deleted
+
+    def cleanup_favorites_by_dish(dish_name):
+        deleted = 0
+
+        try:
+            favorites = get_favorite_dishes()
+
+            for favorite in favorites:
+                if str(favorite[2]).lower().strip() == dish_name.lower().strip():
+                    delete_favorite_dish(favorite[0])
+                    deleted += 1
+        except Exception:
+            pass
+
+        return deleted
+
+    def cleanup_custom_recipes_by_name(recipe_name):
+        deleted = 0
+
+        try:
+            recipes = get_custom_recipes(query=recipe_name)
+
+            for recipe in recipes:
+                if str(recipe[1]).lower().strip() == recipe_name.lower().strip():
+                    delete_custom_recipe(recipe[0])
+                    deleted += 1
+        except Exception:
+            pass
+
+        return deleted
+
+    def run_stress_test():
+        results = []
+
+        suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+        test_product = f"__stress_test_product_{suffix}"
+        test_dish = f"__stress_test_dish_{suffix}"
+        test_recipe = f"__stress_test_recipe_{suffix}"
+        today_str = str(date.today())
+
+        # 1. DB kind
+        try:
+            db_kind = get_db_kind()
+            add_result(results, "Тип базы данных", True, db_kind)
+        except Exception as e:
+            add_result(results, "Тип базы данных", False, str(e))
+
+        # 2. Products read
+        try:
+            products_before = get_products()
+            add_result(results, "Чтение холодильника", True, f"Продуктов: {len(products_before)}")
+        except Exception as e:
+            add_result(results, "Чтение холодильника", False, str(e))
+
+        # 3. Product create/read/delete
+        try:
+            add_or_update_product(
+                name=test_product,
+                quantity=1,
+                unit="шт",
+                calories_per_100g=10,
+                category="Стресс-тест",
+                expiration_date=today_str
+            )
+
+            found = [
+                product for product in get_products()
+                if str(product[1]).lower().strip() == test_product.lower().strip()
+            ]
+
+            if not found:
+                raise RuntimeError("Тестовый продукт не найден после добавления")
+
+            deleted = cleanup_products_by_name(test_product)
+
+            add_result(
+                results,
+                "Добавление/удаление продукта",
+                True,
+                f"Создано: {len(found)}, удалено: {deleted}"
+            )
+        except Exception as e:
+            add_result(results, "Добавление/удаление продукта", False, str(e))
+
+        # 4. Nutrition diary
+        try:
+            add_nutrition_diary_entry(
+                person="Мишка",
+                diary_date=today_str,
+                meal_slot="Перекус",
+                dish_name=test_dish,
+                calories=123,
+                protein=1,
+                fat=2,
+                carbs=3,
+                comment="stress test"
+            )
+
+            entries = get_nutrition_diary_entries(
+                person="Мишка",
+                diary_date=today_str,
+                limit=500
+            )
+
+            found = [
+                entry for entry in entries
+                if str(entry[4]).lower().strip() == test_dish.lower().strip()
+            ]
+
+            if not found:
+                raise RuntimeError("Запись дневника не найдена после добавления")
+
+            deleted = cleanup_diary_by_dish(test_dish)
+
+            add_result(
+                results,
+                "Дневник питания",
+                True,
+                f"Создано: {len(found)}, удалено: {deleted}"
+            )
+        except Exception as e:
+            add_result(results, "Дневник питания", False, str(e))
+
+        # 5. Smart shopping
+        try:
+            add_shopping_item(
+                name=test_product,
+                amount=2,
+                unit="шт",
+                category="Стресс-тест",
+                calories_per_100g=10,
+                expiration_date=today_str,
+                source="stress_test"
+            )
+
+            items = get_shopping_items(include_bought=True)
+
+            found = [
+                item for item in items
+                if str(item[1]).lower().strip() == test_product.lower().strip()
+            ]
+
+            if not found:
+                raise RuntimeError("Покупка не найдена после добавления")
+
+            deleted = cleanup_shopping_by_name(test_product)
+
+            add_result(
+                results,
+                "Умные покупки",
+                True,
+                f"Создано: {len(found)}, удалено: {deleted}"
+            )
+        except Exception as e:
+            add_result(results, "Умные покупки", False, str(e))
+
+        # 6. Favorites
+        try:
+            add_favorite_dish(
+                person="Мишка",
+                dish_name=test_dish,
+                source="stress_test",
+                rating=5,
+                notes="stress test"
+            )
+
+            favorites = get_favorite_dishes("Мишка")
+
+            found = [
+                favorite for favorite in favorites
+                if str(favorite[2]).lower().strip() == test_dish.lower().strip()
+            ]
+
+            if not found:
+                raise RuntimeError("Любимое блюдо не найдено после добавления")
+
+            deleted = cleanup_favorites_by_dish(test_dish)
+
+            add_result(
+                results,
+                "Любимые блюда",
+                True,
+                f"Создано: {len(found)}, удалено: {deleted}"
+            )
+        except Exception as e:
+            add_result(results, "Любимые блюда", False, str(e))
+
+        # 7. Custom recipes
+        try:
+            add_custom_recipe(
+                name=test_recipe,
+                category="Стресс-тест",
+                cooking_time="1 минута",
+                calories=111,
+                protein=1,
+                fat=1,
+                carbs=1,
+                ingredients_text="тестовый ингредиент",
+                instructions_text="тестовый шаг",
+                history="тестовая история",
+                origin="стресс-тест",
+                notes="stress test",
+                emoji="🧪"
+            )
+
+            recipes = get_custom_recipes(query=test_recipe)
+
+            found = [
+                recipe for recipe in recipes
+                if str(recipe[1]).lower().strip() == test_recipe.lower().strip()
+            ]
+
+            if not found:
+                raise RuntimeError("Свой рецепт не найден после добавления")
+
+            deleted = cleanup_custom_recipes_by_name(test_recipe)
+
+            add_result(
+                results,
+                "Мои рецепты",
+                True,
+                f"Создано: {len(found)}, удалено: {deleted}"
+            )
+        except Exception as e:
+            add_result(results, "Мои рецепты", False, str(e))
+
+        # 8. Menu build
+        try:
+            current_products = get_products()
+
+            menu_mishka = build_personal_week_menu("Мишка", current_products)
+            menu_medinka = build_personal_week_menu("Мединка", current_products)
+
+            if not menu_mishka or not menu_medinka:
+                raise RuntimeError("Меню для одного из пользователей не построилось")
+
+            add_result(
+                results,
+                "Построение меню",
+                True,
+                f"Мишка: {len(menu_mishka['week'])} дней, Мединка: {len(menu_medinka['week'])} дней"
+            )
+        except Exception as e:
+            add_result(results, "Построение меню", False, str(e))
+
+        # 9. Shopping list for menu
+        try:
+            current_products = get_products()
+            menu_mishka = build_personal_week_menu("Мишка", current_products)
+            menu_medinka = build_personal_week_menu("Мединка", current_products)
+
+            shopping_mishka = build_shopping_list_for_menu(menu_mishka, current_products)
+            shopping_medinka = build_shopping_list_for_menu(menu_medinka, current_products)
+
+            add_result(
+                results,
+                "Список покупок для меню",
+                True,
+                f"Мишка: {len(shopping_mishka)}, Мединка: {len(shopping_medinka)}"
+            )
+        except Exception as e:
+            add_result(results, "Список покупок для меню", False, str(e))
+
+        # 10. History read
+        try:
+            history = get_history()
+            add_result(results, "История блюд", True, f"Записей: {len(history)}")
+        except Exception as e:
+            add_result(results, "История блюд", False, str(e))
+
+        # 11. Transactions read
+        try:
+            transactions = get_product_transactions()
+            add_result(results, "Списания/транзакции", True, f"Записей: {len(transactions)}")
+        except Exception as e:
+            add_result(results, "Списания/транзакции", False, str(e))
+
+        # 12. Accepted menus read
+        try:
+            accepted_menus = get_accepted_week_menus()
+            add_result(results, "Принятые меню", True, f"Записей: {len(accepted_menus)}")
+        except Exception as e:
+            add_result(results, "Принятые меню", False, str(e))
+
+        return results
+
+    st.subheader("🚦 Быстрая проверка")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        try:
+            st.metric("База", get_db_kind())
+        except Exception:
+            st.metric("База", "ошибка")
+
+    with col2:
+        try:
+            st.metric("Продуктов", len(get_products()))
+        except Exception:
+            st.metric("Продуктов", "ошибка")
+
+    with col3:
+        try:
+            st.metric("Записей истории", len(get_history()))
+        except Exception:
+            st.metric("История", "ошибка")
+
+    st.divider()
+
+    if st.button("🧪 Запустить стресс-тест", use_container_width=True):
+        with st.spinner("Проверяю приложение, облако и базу данных..."):
+            results = run_stress_test()
+
+        df = pd.DataFrame(results)
+
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        errors = [row for row in results if not row["Статус"].startswith("✅")]
+
+        if errors:
+            st.error(f"Найдены ошибки: {len(errors)}")
+            st.write("Ошибки:")
+            st.dataframe(pd.DataFrame(errors), use_container_width=True, hide_index=True)
+        else:
+            st.success("Все базовые связки прошли стресс-тест ✅")
+
+    st.divider()
+
+    st.subheader("📱 Почему мобильная версия может тормозить")
+
+    st.markdown("""
+    Возможные причины:
+
+    - бесплатный Streamlit Cloud может «засыпать», первый запуск после паузы медленный;
+    - Supabase находится в другом регионе, запросы идут дольше;
+    - Streamlit перерисовывает страницу после каждого действия;
+    - тяжёлые страницы с таблицами и меню грузятся дольше на телефоне;
+    - мобильный интернет может быть медленнее Wi-Fi.
+
+    Что уже оптимизировано:
+
+    - инициализация базы теперь кэшируется через `st.cache_resource`;
+    - стресс-тест проверяет Supabase изнутри облачного приложения.
+
+    Что можно сделать дальше:
+
+    - добавить кэширование чтения продуктов и рецептов на 10–30 секунд;
+    - сделать главную страницу легче;
+    - вынести тяжёлые таблицы в отдельные вкладки;
+    - подключить сервис, который будет держать Streamlit Cloud «проснувшимся».
+    """)
 
 
 elif page == "Мой холодильник":

@@ -1,5 +1,5 @@
 APP_NAME = "Умный холодильник Мединки"
-APP_VERSION = "v1.1.2"
+APP_VERSION = "v1.1"
 DEVELOPER = "Иванов Михаил"
 
 PEOPLE = ["Мишка", "Мединка"]
@@ -28,9 +28,7 @@ NUTRITION_GOALS = [
 APP_TAGLINE = "Холодильник, рецепты, меню, покупки и списание продуктов в одном месте."
 
 # v1.1 Auth defaults
-# В облачной версии лучше задать PIN-коды в Streamlit Cloud Secrets:
-# AUTH_PIN_MISHKA = "ваш_PIN"
-# AUTH_PIN_MEDINKA = "ваш_PIN"
+# Важно: для облака лучше задать PIN-коды в Streamlit Secrets.
 DEFAULT_AUTH_PINS = {
     "Мишка": "1111",
     "Мединка": "2222"
